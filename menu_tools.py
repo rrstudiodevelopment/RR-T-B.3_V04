@@ -125,7 +125,7 @@ class RAHA_OT_InfoPopup(bpy.types.Operator):
             col.label(text="Raha Tools v.04")            
             col.separator()            
             col.label(text="- update menu tools ")
-#            col.label(text="- update bug HUB + PB")
+            col.label(text="- update menu versi")
             col.label(text="- update save animation")
 #            col.label(text="- penambahan fitur anti lag di mini tools")
 #            col.separator()
