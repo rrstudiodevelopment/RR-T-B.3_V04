@@ -130,7 +130,7 @@ class RAHA_OT_InfoPopup(bpy.types.Operator):
             col.label(text="- Playblast + HUD")
 #            col.separator()
             col.label(text="- add fitur keyframe editor di graph editor")
-#            col.label(text="yang akan dibagikan secara gratis.")        
+            col.label(text="- update security")        
 #            col.separator()
 #            col.operator("raha.pb_tool", text="How to Use")            
  #           col.operator("raha.pb_tool", text="Report A Bug")          
