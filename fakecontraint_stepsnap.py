@@ -7,6 +7,102 @@ import mathutils
 
 stored_matrices = {}
 
+class RahaSmartBake(bpy.types.Operator):
+    """Melakukan proses smart bake dari start frame hingga end frame untuk semua bone yang dipilih"""
+    bl_idname = "object.smart_bake"
+    bl_label = "Smart Bake"
+    
+    def execute(self, context):
+        obj = context.object
+        scene = context.scene
+        start_frame = scene.start_frame
+        end_frame = scene.end_frame
+        
+        if obj and obj.type == 'ARMATURE' and obj.mode == 'POSE':
+            selected_bones = context.selected_pose_bones  # Ambil semua bone yang dipilih
+            if selected_bones:
+                for bone in selected_bones:  # Iterasi pada setiap bone yang dipilih
+                    for frame in range(start_frame, end_frame + 1):
+                        # Set frame saat ini
+                        scene.frame_set(frame)
+                        
+                        # Simpan matrix beserta scale
+                        matrix = obj.matrix_world @ bone.matrix
+                        location, rotation, scale = matrix.decompose()  # Dekomposisi matriks
+                        stored_matrices[bone.name] = {
+                            "matrix": [list(row) for row in matrix],
+                            "scale": list(scale)  # Simpan scale
+                        }
+                        
+                        # Maju 1 frame
+                        scene.frame_set(frame + 1)
+                        
+                        # Insert keyframe di frame berikutnya
+                        bone.keyframe_insert(data_path="location", index=-1)
+                        bone.keyframe_insert(data_path="rotation_quaternion", index=-1)
+                        bone.keyframe_insert(data_path="rotation_euler", index=-1)
+                        bone.keyframe_insert(data_path="scale", index=-1)  # Insert keyframe untuk scale
+                        # Insert keyframe untuk semua custom properties yang ada
+                        for prop in bone.keys():  
+                            if prop not in "_RNA_UI":  # Hindari properti internal Blender
+                                bone.keyframe_insert(data_path=f'["{prop}"]')
+                        
+                        # Mundur 1 frame
+                        scene.frame_set(frame)
+                        
+                        # Apply matrix beserta scale
+                        matrix_data = stored_matrices[bone.name]["matrix"]
+                        scale_data = stored_matrices[bone.name]["scale"]
+                        
+                        # Buat matriks baru dengan scale yang disimpan
+                        new_matrix = obj.matrix_world.inverted() @ mathutils.Matrix(matrix_data)
+                        new_matrix = new_matrix @ mathutils.Matrix.Scale(scale_data[0], 4, (1, 0, 0))  # Scale X
+                        new_matrix = new_matrix @ mathutils.Matrix.Scale(scale_data[1], 4, (0, 1, 0))  # Scale Y
+                        new_matrix = new_matrix @ mathutils.Matrix.Scale(scale_data[2], 4, (0, 0, 1))  # Scale Z
+                        
+                        bone.matrix = new_matrix
+                        
+                        # Insert keyframe di frame saat ini
+                        bone.keyframe_insert(data_path="location", index=-1)
+                        bone.keyframe_insert(data_path="rotation_quaternion", index=-1)
+                        bone.keyframe_insert(data_path="rotation_euler", index=-1)
+                        bone.keyframe_insert(data_path="scale", index=-1)  # Insert keyframe untuk scale
+                        # Insert keyframe untuk semua custom properties yang ada
+                        for prop in bone.keys():  
+                            if prop not in "_RNA_UI":  # Hindari properti internal Blender
+                                bone.keyframe_insert(data_path=f'["{prop}"]')
+                                
+                    # Setelah selesai, maju 1 frame dan hapus keyframe
+                    scene.frame_set(end_frame + 1)
+                    bone.keyframe_delete(data_path="location")
+                    bone.keyframe_delete(data_path="rotation_quaternion")
+                    bone.keyframe_delete(data_path="rotation_euler")
+                    bone.keyframe_delete(data_path="scale")  # Hapus keyframe untuk scale
+                        # Insert keyframe untuk semua custom properties yang ada
+                    for prop in bone.keys():  
+                        if prop not in "_RNA_UI":  # Hindari properti internal Blender
+                             bone.keyframe_delete(data_path=f'["{prop}"]')                    
+                    
+                    # Deteksi constraint dan set influence ke 0
+                    if bone.constraints:
+                        for constraint in reversed(bone.constraints):  # Loop dari belakang untuk menghindari masalah index
+                            bone.constraints.remove(constraint)  # Hapus constraint satu per satu
+                        self.report({'INFO'}, f"Semua constraint pada bone {bone.name} telah dihapus.")
+
+
+
+                        
+                        
+                
+                self.report({'INFO'}, f"Smart Bake selesai untuk {len(selected_bones)} bone.")
+            else:
+                self.report({'WARNING'}, "Tidak ada bone yang dipilih.")
+        else:
+            self.report({'WARNING'}, "Harap masuk ke Pose Mode dan pilih bone.")
+        return {'FINISHED'}
+    
+    
+
 class RahaSaveBoneMatrix(bpy.types.Operator):
     """Menyimpan matrix location dan rotation dalam world space"""
     bl_idname = "object.save_bone_matrix"
@@ -114,16 +210,22 @@ class RahaBoneMatrixPanel(bpy.types.Panel):
         layout.label(text="Fake constraint")
         layout.operator("object.save_bone_matrix", text="Save data fake")
         layout.operator("object.apply_bone_matrix", text="Apply fake constraint")
+         
         
         layout.separator()  
-        layout.label(text="Step Snap")                      
+        layout.label(text="Frame range for step-snap And Bake")                       
         layout.prop(scene, "start_frame")
         layout.prop(scene, "end_frame")
+        layout.label(text="Bake and delete Constraint")        
+        layout.operator("object.smart_bake", text="SMART BAKE ANIMATION") 
+        layout.label(text="Step-snap")                  
         row = layout.row()
+        
         row.operator("object.forward_animation", text="Forward", icon='TRIA_RIGHT')
-        row.operator("object.backward_animation", text="Backward", icon='TRIA_LEFT')
+        row.operator("object.backward_animation", text="Backward", icon='TRIA_LEFT')     
+        
 
-classes = [RahaSaveBoneMatrix, RahaApplyBoneMatrix, RahaForwardAnimation, RahaBackwardAnimationBackwardAnimation, RahaBoneMatrixPanel]
+classes = [RahaSaveBoneMatrix, RahaApplyBoneMatrix, RahaForwardAnimation, RahaBackwardAnimationBackwardAnimation, RahaSmartBake, RahaBoneMatrixPanel]
 
 def register():
     for cls in classes:
