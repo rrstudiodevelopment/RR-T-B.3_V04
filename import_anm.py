@@ -1,78 +1,65 @@
+
+
 import bpy
 import os
-from bpy.props import StringProperty, CollectionProperty
-from bpy.types import Operator, Panel, PropertyGroup, UIList
+from bpy.props import StringProperty, EnumProperty
+from bpy.utils import previews
+
+# Global variables
+_icons = None
+_video_paths = []
 
 
+# Function to load videos from a custom path
+def load_videos_from_path(path):
+    global _video_paths
+    _video_paths.clear()
+    
+    if os.path.exists(path) and os.path.isdir(path):
+        for file in os.listdir(path):
+            if file.lower().endswith(('.mp4', '.avi', '.mkv', '.mov')):
+                _video_paths.append((file, file, "", load_preview_icon(os.path.join(path, file))))
 
+# Function to load a preview icon
+def load_preview_icon(path):
+    global _icons
+    if not path in _icons:
+        if os.path.exists(path):
+            _icons.load(path, path, "IMAGE")
+        else:
+            return 0
+    return _icons[path].icon_id
 
-#=================================================================================
-# Property Group untuk menyimpan informasi video 
-class VideoItem(PropertyGroup):
-    name: StringProperty(name="Name")
-    path: StringProperty(name="Path")
+# Enum property for the videos
+def sna_videos_enum_items(self, context):
+    enum_items = []
+    for i, item in enumerate(_video_paths):
+        enum_items.append((item[0], item[1], item[2], item[3], i))
+    return enum_items
 
-# Operator untuk memeriksa dan memilih bone yang terdaftar dalam script
-class WM_OT_SelectBonesFromScript(bpy.types.Operator):
-    bl_idname = "wm.select_bones_from_script"
-    bl_label = "Selected"
-    bl_description = "Select bones listed in the imported script"
+# Update function for the custom path property
+def sna_update_custom_path(self, context):
+    custom_path = bpy.context.scene.sna_custom_path
+    load_videos_from_path(custom_path)
+
+# Operator to play the selected video
+class WM_OT_PlayVideo(bpy.types.Operator):
+    bl_idname = "wm.play_video"
+    bl_label = "Play Video"
+    bl_description = "Play the selected video using the default video player"
     
     def execute(self, context):
-        selected_video = context.scene.video_list[context.scene.video_index]
-        video_name = selected_video.name
-        directory = context.scene.video_folder
+        selected_video = context.scene.sna_videos
+        custom_path = context.scene.sna_custom_path
+        video_path = os.path.join(custom_path, selected_video)
         
-        # Path ke folder ANIM_DATA
-        anim_data_dir = os.path.join(directory, "ANIM_DATA")
+        if os.name == 'nt':
+            os.startfile(video_path)
+        else:
+            self.report({'ERROR'}, "This addon only works on Windows.")
         
-        if not os.path.exists(anim_data_dir):
-            self.report({'ERROR'}, f"Folder ANIM_DATA tidak ditemukan di: {directory}")
-            return {'CANCELLED'}
-        
-        # Path ke file script
-        script_filepath = os.path.join(anim_data_dir, f"{os.path.splitext(video_name)[0]}.py")
-        
-        if not os.path.exists(script_filepath):
-            self.report({'ERROR'}, f"File script {os.path.basename(script_filepath)} tidak ditemukan di: {anim_data_dir}")
-            return {'CANCELLED'}
-        
-        # Baca file script
-        try:
-            with open(script_filepath, 'r') as file:
-                script_content = file.read()
-            
-            # Cari bone yang terdaftar dalam script
-            import re
-            bone_names = re.findall(r"armature_obj\.pose\.bones\[\'([^\']+)\'\]", script_content)
-            
-            if not bone_names:
-                self.report({'WARNING'}, "Tidak ada bone yang ditemukan dalam script.")
-                return {'CANCELLED'}
-            
-            # Dapatkan armature yang aktif
-            armature_obj = context.active_object
-            if not armature_obj or armature_obj.type != 'ARMATURE':
-                self.report({'ERROR'}, "Tidak ada armature yang aktif.")
-                return {'CANCELLED'}
-            
-            # Pilih bone yang terdaftar
-            bpy.ops.object.mode_set(mode='POSE')
-            bpy.ops.pose.select_all(action='DESELECT')
-            
-            for bone_name in bone_names:
-                if bone_name in armature_obj.pose.bones:
-                    armature_obj.pose.bones[bone_name].bone.select = True
-                    self.report({'INFO'}, f"Bone '{bone_name}' dipilih.")
-                else:
-                    self.report({'WARNING'}, f"Bone '{bone_name}' tidak ditemukan dalam armature.")
-            
-            return {'FINISHED'}
-        
-        except Exception as e:
-            self.report({'ERROR'}, f"Terjadi error saat membaca script: {e}")
-            return {'CANCELLED'}
-        
+        return {'FINISHED'}
+
 #============================================== refresh list ======================
 class WM_OT_RefreshList(bpy.types.Operator):
     bl_idname = "wm.refresh_list"
@@ -87,100 +74,119 @@ class WM_OT_RefreshList(bpy.types.Operator):
             self.report({'ERROR'}, "No folder selected.")
         return {'FINISHED'}    
 
-# Operator untuk memilih folder
-class WM_OT_SelectFolder(bpy.types.Operator):
-    bl_idname = "wm.select_folder"
-    bl_label = "Select Folder"
-    bl_description = "Select a folder to browse videos"
-    
-    directory: StringProperty(subtype='DIR_PATH')
-    
-    def execute(self, context):
-        context.scene.video_folder = self.directory
-        context.scene.video_list.clear()
-        
-        for file in os.listdir(self.directory):
-            if file.endswith((".mp4", ".avi", ".mkv", ".mov")):
-                item = context.scene.video_list.add()
-                item.name = file
-                item.path = os.path.join(self.directory, file)
-        
-        return {'FINISHED'}
-    
-    def invoke(self, context, event):
-        context.window_manager.fileselect_add(self)
-        return {'RUNNING_MODAL'}
-
-# Operator untuk memutar video
-class WM_OT_PlayVideo(bpy.types.Operator):
-    bl_idname = "wm.play_video"
-    bl_label = "Play Video"
-    bl_description = "Play selected video using default video player"
-    
-    def execute(self, context):
-        selected_video = context.scene.video_list[context.scene.video_index]
-        video_path = selected_video.path
-        
-        if os.name == 'nt':
-            os.startfile(video_path)
-        else:
-            self.report({'ERROR'}, "This addon only works on Windows.")
-        
-        return {'FINISHED'}
-    
-# Operator untuk mengimpor script animasi
+# Operator to import animation script
 class WM_OT_ImportAnimation(bpy.types.Operator):
     bl_idname = "wm.import_animation"
     bl_label = "Import Animation"
-    bl_description = "Import animation data from selected video's script"
+    bl_description = "Import animation data from the selected video's script"
     
     def execute(self, context):
-        selected_video = context.scene.video_list[context.scene.video_index]
-        video_name = selected_video.name
-        directory = context.scene.video_folder
+        selected_video = context.scene.sna_videos
+        custom_path = context.scene.sna_custom_path
+        video_name = os.path.splitext(selected_video)[0]
         
-        # Path ke folder ANIM_DATA
-        anim_data_dir = os.path.join(directory, "ANIM_DATA")
+        # Path to ANIM_DATA folder
+        anim_data_dir = os.path.join(custom_path, "ANIM_DATA")
         
         if not os.path.exists(anim_data_dir):
-            self.report({'ERROR'}, f"Folder ANIM_DATA tidak ditemukan di: {directory}")
+            self.report({'ERROR'}, f"ANIM_DATA folder not found in: {custom_path}")
             return {'CANCELLED'}
         
-        # Path ke file script
-        script_filepath = os.path.join(anim_data_dir, f"{os.path.splitext(video_name)[0]}.py")
+        # Path to script file
+        script_filepath = os.path.join(anim_data_dir, f"{video_name}.py")
         
         if not os.path.exists(script_filepath):
-            self.report({'ERROR'}, f"File script {os.path.basename(script_filepath)} tidak ditemukan di: {anim_data_dir}")
+            self.report({'ERROR'}, f"Script file {os.path.basename(script_filepath)} not found in: {anim_data_dir}")
             return {'CANCELLED'}
         
-        # Baca dan eksekusi script
+        # Read and execute the script
         try:
             with open(script_filepath, 'r') as file:
                 exec(file.read())
-            self.report({'INFO'}, f"Data keyframe dari {script_filepath} berhasil diimpor.")
+            self.report({'INFO'}, f"Animation data from {script_filepath} imported successfully.")
             return {'FINISHED'}
         except Exception as e:
-            self.report({'ERROR'}, f"Terjadi error saat mengimpor script: {e}")
+            self.report({'ERROR'}, f"Error importing script: {e}")
             return {'CANCELLED'}
-    
 
-# Operator untuk menghapus video
+# Operator to select bones from the script
+class WM_OT_SelectBonesFromScript(bpy.types.Operator):
+    bl_idname = "wm.select_bones_from_script"
+    bl_label = "Selected"
+    bl_description = "Select bones listed in the imported script"
+    
+    def execute(self, context):
+        selected_video = context.scene.sna_videos
+        custom_path = context.scene.sna_custom_path
+        video_name = os.path.splitext(selected_video)[0]
+        
+        # Path to ANIM_DATA folder
+        anim_data_dir = os.path.join(custom_path, "ANIM_DATA")
+        
+        if not os.path.exists(anim_data_dir):
+            self.report({'ERROR'}, f"ANIM_DATA folder not found in: {custom_path}")
+            return {'CANCELLED'}
+        
+        # Path to script file
+        script_filepath = os.path.join(anim_data_dir, f"{video_name}.py")
+        
+        if not os.path.exists(script_filepath):
+            self.report({'ERROR'}, f"Script file {os.path.basename(script_filepath)} not found in: {anim_data_dir}")
+            return {'CANCELLED'}
+        
+        # Read the script
+        try:
+            with open(script_filepath, 'r') as file:
+                script_content = file.read()
+            
+            # Find bones in the script
+            import re
+            bone_names = re.findall(r"armature_obj\.pose\.bones\[\'([^\']+)\'\]", script_content)
+            
+            if not bone_names:
+                self.report({'WARNING'}, "No bones found in the script.")
+                return {'CANCELLED'}
+            
+            # Get the active armature
+            armature_obj = context.active_object
+            if not armature_obj or armature_obj.type != 'ARMATURE':
+                self.report({'ERROR'}, "No active armature found.")
+                return {'CANCELLED'}
+            
+            # Select the bones
+            bpy.ops.object.mode_set(mode='POSE')
+            bpy.ops.pose.select_all(action='DESELECT')
+            
+            for bone_name in bone_names:
+                if bone_name in armature_obj.pose.bones:
+                    armature_obj.pose.bones[bone_name].bone.select = True
+                    self.report({'INFO'}, f"Bone '{bone_name}' selected.")
+                else:
+                    self.report({'WARNING'}, f"Bone '{bone_name}' not found in armature.")
+            
+            return {'FINISHED'}
+        
+        except Exception as e:
+            self.report({'ERROR'}, f"Error reading script: {e}")
+            return {'CANCELLED'}
+
+# Operator to delete the selected video and its script
 class WM_OT_DeleteVideo(bpy.types.Operator):
     bl_idname = "wm.delete_video"
     bl_label = "Delete Video"
     bl_description = "Delete the selected video and its corresponding script"
     
     def execute(self, context):
-        selected_video = context.scene.video_list[context.scene.video_index]
-        video_name = selected_video.name
-        video_path = selected_video.path
-        directory = context.scene.video_folder
+        selected_video = context.scene.sna_videos
+        custom_path = context.scene.sna_custom_path
+        video_path = os.path.join(custom_path, selected_video)
+        video_name = os.path.splitext(selected_video)[0]
         
-        # Path ke folder ANIM_DATA
-        anim_data_dir = os.path.join(directory, "ANIM_DATA")
-        script_filepath = os.path.join(anim_data_dir, f"{os.path.splitext(video_name)[0]}.py")
+        # Path to ANIM_DATA folder
+        anim_data_dir = os.path.join(custom_path, "ANIM_DATA")
+        script_filepath = os.path.join(anim_data_dir, f"{video_name}.py")
         
-        # Hapus script jika ada
+        # Delete the script if it exists
         if os.path.exists(script_filepath):
             try:
                 os.remove(script_filepath)
@@ -189,84 +195,82 @@ class WM_OT_DeleteVideo(bpy.types.Operator):
                 self.report({'ERROR'}, f"Failed to delete script: {e}")
                 return {'CANCELLED'}
         
-        # Hapus video
+        # Delete the video
         if os.path.exists(video_path):
             try:
                 os.remove(video_path)
-                self.report({'INFO'}, f"Video {video_name} deleted.")
+                self.report({'INFO'}, f"Video {selected_video} deleted.")
             except Exception as e:
                 self.report({'ERROR'}, f"Failed to delete video: {e}")
                 return {'CANCELLED'}
         
-        # Refresh daftar video
-        bpy.ops.wm.refresh_list()
+        # Refresh the video list
+        load_videos_from_path(custom_path)
         
         return {'FINISHED'}
 
-# UIList untuk menampilkan daftar video
-class VIDEO_UL_List(UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        layout.label(text=item.name)
-                      
-# Panel untuk UI
+# Panel class
 class VIDEO_PT_Browser(bpy.types.Panel):
     bl_label = "Import Animation"
     bl_idname = "VIDEO_PT_Browser"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'WINDOW'
-    
+
     def draw(self, context):
         layout = self.layout
-        scene = context.scene
+        layout.prop(context.scene, 'sna_custom_path', text="Video Folder Path")
         
-        row = layout.row()
-        row.operator("wm.select_folder", text="Select Folder")
-        row.operator("wm.refresh_list", text="", icon='FILE_REFRESH')     
+        layout.template_icon_view(context.scene, 'sna_videos', show_labels=True, scale=5.0, scale_popup=5.0)
         
-        if scene.video_folder:
-            layout.label(text=f"Selected Folder: {scene.video_folder}")
-        
-        if scene.video_list:
-            layout.template_list("VIDEO_UL_List", "", scene, "video_list", scene, "video_index")
-            
-            if scene.video_index >= 0 and scene.video_index < len(scene.video_list):
-                row = layout.row()
-                row.operator("wm.play_video", text="Preview", icon='PLAY')
-                row.operator("wm.import_animation", text="Import Animation")
-                row = layout.row()                
-                row.operator("wm.select_bones_from_script", text="Selected")
-                row.operator("wm.delete_video", text="DEL", icon='TRASH')
+        if context.scene.sna_videos:
+            row = layout.row()
+            row.operator("wm.refresh_list", text="", icon='FILE_REFRESH')             
+            row.operator("wm.play_video", text="Play")
+            row.operator("wm.import_animation", text="Import")
+            row = layout.row()             
+            row.operator("wm.select_bones_from_script", text="Selected")
+            row.operator("wm.delete_video", text="Delete", icon='TRASH')
 
-# Register dan Unregister
-classes = ( 
-    VideoItem,
-    WM_OT_SelectFolder,
-    WM_OT_PlayVideo,
-    WM_OT_ImportAnimation,
-    WM_OT_DeleteVideo,
-    VIDEO_UL_List,
-    VIDEO_PT_Browser,
-    WM_OT_SelectBonesFromScript,
-    WM_OT_RefreshList
-)
-
+# Register function
 def register():
-    print("Import ANM Registered")  
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    global _icons
+    _icons = previews.new()
     
-    bpy.types.Scene.video_folder = StringProperty(name="Video Folder")
-    bpy.types.Scene.video_list = CollectionProperty(type=VideoItem)
-    bpy.types.Scene.video_index = bpy.props.IntProperty(name="Index", default=0)
+    bpy.types.Scene.sna_custom_path = StringProperty(
+        name="Custom Path",
+        description="Path to the folder containing videos",
+        default="",
+        subtype='DIR_PATH',
+        update=sna_update_custom_path
+    )
+    
+    bpy.types.Scene.sna_videos = EnumProperty(
+        name="Videos",
+        description="List of videos in the selected folder",
+        items=sna_videos_enum_items
+    )
+    
+    bpy.utils.register_class(WM_OT_PlayVideo)
+    bpy.utils.register_class(WM_OT_ImportAnimation)
+    bpy.utils.register_class(WM_OT_SelectBonesFromScript)
+    bpy.utils.register_class(WM_OT_DeleteVideo)
+    bpy.utils.register_class(VIDEO_PT_Browser)
 
+    bpy.utils.register_class(WM_OT_RefreshList)
+# Unregister function
 def unregister():
-    print("Import ANM Unregistered")    
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+    global _icons
+    previews.remove(_icons)
     
-    del bpy.types.Scene.video_folder
-    del bpy.types.Scene.video_list
-    del bpy.types.Scene.video_index
+    del bpy.types.Scene.sna_custom_path
+    del bpy.types.Scene.sna_videos
+    
+    bpy.utils.unregister_class(SNA_PT_VIDEO_ANIMATION_IMPORTER)
+    bpy.utils.unregister_class(WM_OT_DeleteVideo)
+    bpy.utils.unregister_class(WM_OT_SelectBonesFromScript)
+    bpy.utils.unregister_class(WM_OT_ImportAnimation)
+    bpy.utils.unregister_class(WM_OT_PlayVideo)
+    bpy.utils.unregister_class(WM_OT_RefreshList)    
 
 if __name__ == "__main__":
     register()
