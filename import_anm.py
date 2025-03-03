@@ -2,11 +2,11 @@ import bpy
 import os
 from bpy.props import StringProperty, EnumProperty
 from bpy.utils import previews
+import re
 
 # Global variables
 _icons = None
 _video_paths = []
-
 
 # Function to load videos from a custom path
 def load_videos_from_path(path):
@@ -18,7 +18,6 @@ def load_videos_from_path(path):
             if file.lower().endswith(('.mp4', '.avi', '.mkv', '.mov')):
                 _video_paths.append((file, file, "", load_preview_icon(os.path.join(path, file))))
 
-
 # Function to load a preview icon
 def load_preview_icon(path):
     global _icons
@@ -29,20 +28,14 @@ def load_preview_icon(path):
             return 0
     return _icons[path].icon_id
 
-
 # Enum property for the videos
 def sna_videos_enum_items(self, context):
-    enum_items = []
-    for i, item in enumerate(_video_paths):
-        enum_items.append((item[0], item[1], item[2], item[3], i))
-    return enum_items
-
+    return [(item[0], item[1], item[2], item[3], i) for i, item in enumerate(_video_paths)]
 
 # Update function for the custom path property
 def sna_update_custom_path(self, context):
     custom_path = bpy.context.scene.sna_custom_path
     load_videos_from_path(custom_path)
-
 
 # Operator to play the selected video
 class WM_OT_PlayVideo(bpy.types.Operator):
@@ -62,7 +55,6 @@ class WM_OT_PlayVideo(bpy.types.Operator):
         
         return {'FINISHED'}
 
-
 # Operator to refresh the video list
 class WM_OT_RefreshList(bpy.types.Operator):
     bl_idname = "wm.refresh_list"
@@ -79,7 +71,6 @@ class WM_OT_RefreshList(bpy.types.Operator):
             self.report({'ERROR'}, "Invalid or no folder selected.")
         
         return {'FINISHED'}
-
 
 # Operator to import animation script
 class WM_OT_ImportAnimation(bpy.types.Operator):
@@ -116,7 +107,6 @@ class WM_OT_ImportAnimation(bpy.types.Operator):
             self.report({'ERROR'}, f"Error importing script: {e}")
             return {'CANCELLED'}
 
-
 # Operator to select bones from the script
 class WM_OT_SelectBonesFromScript(bpy.types.Operator):
     bl_idname = "wm.select_bones_from_script"
@@ -148,7 +138,6 @@ class WM_OT_SelectBonesFromScript(bpy.types.Operator):
                 script_content = file.read()
             
             # Find bones in the script
-            import re
             bone_names = re.findall(r"armature_obj\.pose\.bones\[\'([^\']+)\'\]", script_content)
             
             if not bone_names:
@@ -177,7 +166,6 @@ class WM_OT_SelectBonesFromScript(bpy.types.Operator):
         except Exception as e:
             self.report({'ERROR'}, f"Error reading script: {e}")
             return {'CANCELLED'}
-
 
 # Operator to delete the selected video and its script
 class WM_OT_DeleteVideo(bpy.types.Operator):
@@ -218,7 +206,6 @@ class WM_OT_DeleteVideo(bpy.types.Operator):
         
         return {'FINISHED'}
 
-
 # Panel class
 class VIDEO_PT_Browser(bpy.types.Panel):
     bl_label = "Import Animation"
@@ -231,16 +218,17 @@ class VIDEO_PT_Browser(bpy.types.Panel):
         layout.prop(context.scene, 'sna_custom_path', text="Video Folder Path")
         
         layout.template_icon_view(context.scene, 'sna_videos', show_labels=True, scale=5.0, scale_popup=5.0)
-        
-        if context.scene.sna_videos:
-            row = layout.row()
-            row.operator("wm.refresh_list", text="", icon='FILE_REFRESH')             
-            row.operator("wm.play_video", text="Play")
-            row.operator("wm.import_animation", text="Import")
-            row = layout.row()             
-            row.operator("wm.select_bones_from_script", text="Selected")
-            row.operator("wm.delete_video", text="Delete", icon='TRASH')
-
+        row = layout.row()
+#        row.operator("wm.refresh_list", text="REFRESH", icon='FILE_REFRESH')         
+#        if context.scene.sna_videos:
+        row = layout.row()
+        row.operator("wm.refresh_list", text="Refresh List", icon='FILE_REFRESH')
+        row = layout.row()                     
+        row.operator("wm.play_video", text="Preview", icon='PLAY')
+        row.operator("wm.import_animation", text="Import ANM")
+        row = layout.row()             
+        row.operator("wm.select_bones_from_script", text="Selected")
+        row.operator("wm.delete_video", text="Delete", icon='TRASH')
 
 # Register function
 def register():
@@ -268,7 +256,6 @@ def register():
     bpy.utils.register_class(VIDEO_PT_Browser)
     bpy.utils.register_class(WM_OT_RefreshList)
 
-
 # Unregister function
 def unregister():
     global _icons
@@ -283,7 +270,6 @@ def unregister():
     bpy.utils.unregister_class(WM_OT_ImportAnimation)
     bpy.utils.unregister_class(WM_OT_PlayVideo)
     bpy.utils.unregister_class(WM_OT_RefreshList)    
-
 
 if __name__ == "__main__":
     register()
