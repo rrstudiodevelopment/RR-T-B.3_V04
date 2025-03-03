@@ -3,12 +3,24 @@ import bpy
 def get_selected_keyframes():
     obj = bpy.context.object
     selected_keyframes = []
-    if obj and obj.animation_data and obj.animation_data.action:
-        fcurves = obj.animation_data.action.fcurves
-        for fcurve in fcurves:
-            for keyframe in fcurve.keyframe_points:
-                if keyframe.select_control_point:
-                    selected_keyframes.append((fcurve, keyframe))
+    
+    if not obj:
+        return selected_keyframes
+    
+    # Check for object animation data
+    if obj.animation_data and obj.animation_data.action:
+        for fcurve in obj.animation_data.action.fcurves:
+            # Check if the fcurve is related to a bone (pose mode)
+            if fcurve.data_path.startswith("pose.bones["):
+                for keyframe in fcurve.keyframe_points:
+                    if keyframe.select_control_point:
+                        selected_keyframes.append((fcurve, keyframe))
+            # Check for object-level keyframes (location, rotation, scale)
+            else:
+                for keyframe in fcurve.keyframe_points:
+                    if keyframe.select_control_point:
+                        selected_keyframes.append((fcurve, keyframe))
+    
     return selected_keyframes
 
 class GRAPH_OT_EditKeyframes(bpy.types.Operator):
@@ -19,12 +31,30 @@ class GRAPH_OT_EditKeyframes(bpy.types.Operator):
 
     def execute(self, context):
         selected_keyframes = get_selected_keyframes()
-        if selected_keyframes:
-            for fcurve, keyframe in selected_keyframes:
+        obj = context.object
+        
+        if not obj or not obj.pose:
+            self.report({'WARNING'}, "No active object or pose mode detected!")
+            return {'CANCELLED'}
+        
+        active_bone = obj.pose.bones.get(obj.data.bones.active.name) if obj.data.bones.active else None
+        
+        if not active_bone:
+            self.report({'WARNING'}, "No active bone selected!")
+            return {'CANCELLED'}
+        
+        # Filter keyframes to only those related to the active bone
+        filtered_keyframes = [(f, k) for f, k in selected_keyframes if f'pose.bones["{active_bone.name}"]' in f.data_path]
+        
+        if filtered_keyframes:
+            for fcurve, keyframe in filtered_keyframes:
                 keyframe.co.y = self.value
                 fcurve.update()
             context.area.tag_redraw()
+        else:
+            self.report({'WARNING'}, "No keyframe found for active bone!")
         return {'FINISHED'}
+
 
 class GRAPH_PT_KeyframeEditor(bpy.types.Panel):
     bl_label = "Raha Keyframe Editor"
@@ -33,19 +63,46 @@ class GRAPH_PT_KeyframeEditor(bpy.types.Panel):
     bl_region_type = 'UI'
     bl_category = 'Raha Keyframe Editor'
 
+    @classmethod
+    def poll(cls, context):
+        # Ensure the panel only appears in the Graph Editor
+        return context.area.type == 'GRAPH_EDITOR'
+
+        
     def draw(self, context):
         layout = self.layout
         selected_keyframes = get_selected_keyframes()
+        obj = context.object
         
-        layout.label(text="Edit Value") 
-        if selected_keyframes:
-            last_fcurve, last_keyframe = selected_keyframes[-1]
-            layout.label(text=f"Frame: {last_keyframe.co.x:.2f}")
-            layout.prop(last_keyframe, "co", text="Value", index=1)
+        if not obj or not obj.pose:
+            layout.label(text="No active object or pose mode detected!")
+            return
+        
+        active_bone = obj.pose.bones.get(obj.data.bones.active.name) if obj.data.bones.active else None
+        active_bone_name = active_bone.name if active_bone else "None"
+        
+        layout.label(text="Edit Value")
+        layout.label(text=f"Active Bone: {active_bone_name}")
+        
+        # Filter keyframes to only those related to the active bone
+        filtered_keyframes = [(f, k) for f, k in selected_keyframes if active_bone and f'pose.bones["{active_bone.name}"]' in f.data_path]
+        
+        if filtered_keyframes:
+            active_fcurve, active_keyframe = filtered_keyframes[-1]
+            
+            layout.label(text=f"Frame: {active_keyframe.co.x:.2f}")
+            
+            data_path = active_fcurve.data_path
+            axis = active_fcurve.array_index
+            axis_name = ["X", "Y", "Z"][axis]
+            
+            layout.label(text=f"Type: {data_path}, Axis: {axis_name}")
+            layout.prop(active_keyframe, "co", text="Value", index=1)
+            
             op = layout.operator("graph.edit_keyframes", text="Apply to selected")
-            op.value = last_keyframe.co.y
+            op.value = active_keyframe.co.y
         else:
-            layout.label(text="No keyframe selected")
+            layout.label(text="No keyframe selected or not matching active bone")
             
         layout.label(text="Animation Cycles")           
         layout = self.layout
@@ -55,8 +112,8 @@ class GRAPH_PT_KeyframeEditor(bpy.types.Panel):
         layout.label(text="Set Cycles Mode")
         col = layout.column()
         col.operator_menu_enum("anim.set_cycles_mode", "mode", text="Before Mode").before = True
-        col.operator_menu_enum("anim.set_cycles_mode", "mode", text="After Mode").before = False
-    
+        col.operator_menu_enum("anim.set_cycles_mode", "mode", text="After Mode").before = False            
+
 
 def register():
     bpy.utils.register_class(GRAPH_OT_EditKeyframes)
