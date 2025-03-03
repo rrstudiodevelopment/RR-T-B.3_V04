@@ -4,12 +4,75 @@ from bpy.props import StringProperty, CollectionProperty
 from bpy.types import Operator, Panel, PropertyGroup, UIList
 
 
+
+
 #=================================================================================
 # Property Group untuk menyimpan informasi video 
 class VideoItem(PropertyGroup):
     name: StringProperty(name="Name")
     path: StringProperty(name="Path")
 
+# Operator untuk memeriksa dan memilih bone yang terdaftar dalam script
+class WM_OT_SelectBonesFromScript(bpy.types.Operator):
+    bl_idname = "wm.select_bones_from_script"
+    bl_label = "Selected"
+    bl_description = "Select bones listed in the imported script"
+    
+    def execute(self, context):
+        selected_video = context.scene.video_list[context.scene.video_index]
+        video_name = selected_video.name
+        directory = context.scene.video_folder
+        
+        # Path ke folder ANIM_DATA
+        anim_data_dir = os.path.join(directory, "ANIM_DATA")
+        
+        if not os.path.exists(anim_data_dir):
+            self.report({'ERROR'}, f"Folder ANIM_DATA tidak ditemukan di: {directory}")
+            return {'CANCELLED'}
+        
+        # Path ke file script
+        script_filepath = os.path.join(anim_data_dir, f"{os.path.splitext(video_name)[0]}.py")
+        
+        if not os.path.exists(script_filepath):
+            self.report({'ERROR'}, f"File script {os.path.basename(script_filepath)} tidak ditemukan di: {anim_data_dir}")
+            return {'CANCELLED'}
+        
+        # Baca file script
+        try:
+            with open(script_filepath, 'r') as file:
+                script_content = file.read()
+            
+            # Cari bone yang terdaftar dalam script
+            import re
+            bone_names = re.findall(r"armature_obj\.pose\.bones\[\'([^\']+)\'\]", script_content)
+            
+            if not bone_names:
+                self.report({'WARNING'}, "Tidak ada bone yang ditemukan dalam script.")
+                return {'CANCELLED'}
+            
+            # Dapatkan armature yang aktif
+            armature_obj = context.active_object
+            if not armature_obj or armature_obj.type != 'ARMATURE':
+                self.report({'ERROR'}, "Tidak ada armature yang aktif.")
+                return {'CANCELLED'}
+            
+            # Pilih bone yang terdaftar
+            bpy.ops.object.mode_set(mode='POSE')
+            bpy.ops.pose.select_all(action='DESELECT')
+            
+            for bone_name in bone_names:
+                if bone_name in armature_obj.pose.bones:
+                    armature_obj.pose.bones[bone_name].bone.select = True
+                    self.report({'INFO'}, f"Bone '{bone_name}' dipilih.")
+                else:
+                    self.report({'WARNING'}, f"Bone '{bone_name}' tidak ditemukan dalam armature.")
+            
+            return {'FINISHED'}
+        
+        except Exception as e:
+            self.report({'ERROR'}, f"Terjadi error saat membaca script: {e}")
+            return {'CANCELLED'}
+        
 #============================================== refresh list ======================
 class WM_OT_RefreshList(bpy.types.Operator):
     bl_idname = "wm.refresh_list"
@@ -168,9 +231,11 @@ class VIDEO_PT_Browser(bpy.types.Panel):
             
             if scene.video_index >= 0 and scene.video_index < len(scene.video_list):
                 row = layout.row()
-                row.operator("wm.play_video", text="Preview")
+                row.operator("wm.play_video", text="Preview", icon='PLAY')
                 row.operator("wm.import_animation", text="Import Animation")
-                row.operator("wm.delete_video", text="Delete", icon='TRASH')
+                row = layout.row()                
+                row.operator("wm.select_bones_from_script", text="Selected")
+                row.operator("wm.delete_video", text="DEL", icon='TRASH')
 
 # Register dan Unregister
 classes = ( 
@@ -181,6 +246,7 @@ classes = (
     WM_OT_DeleteVideo,
     VIDEO_UL_List,
     VIDEO_PT_Browser,
+    WM_OT_SelectBonesFromScript,
     WM_OT_RefreshList
 )
 
