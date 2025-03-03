@@ -121,7 +121,7 @@ class RAHA_OT_InfoPopup(bpy.types.Operator):
             layout = self.layout
             
             col = layout.column()
-            col.label(text="update 03/03/2025 - 16:10")
+            col.label(text="update 03/03/2025 - 16:43")
             col.label(text="Raha Tools v.04")            
             col.separator()            
             col.label(text="- update Bake animation ")
