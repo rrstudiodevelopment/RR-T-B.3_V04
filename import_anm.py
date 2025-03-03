@@ -215,7 +215,7 @@ class VIDEO_PT_Browser(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(context.scene, 'sna_custom_path', text="Video Folder Path")
+        layout.prop(context.scene, 'sna_custom_path', text="Folder")
         
         layout.template_icon_view(context.scene, 'sna_videos', show_labels=True, scale=5.0, scale_popup=5.0)
         row = layout.row()
