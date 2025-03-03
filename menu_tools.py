@@ -211,7 +211,7 @@ class RAHA_PT_Tools_For_Animation(bpy.types.Panel):
        
         
         layout = self.layout               
-        layout.operator("floating.open_fake_step", text="Fake Constraint - Step Snap")
+        layout.operator("floating.open_fake_step", text="Fake-bake-step Snap")
         
 #========================================================================================================================
 
