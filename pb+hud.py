@@ -23,6 +23,9 @@ class RAHA_OT_ActivateHUD(bpy.types.Operator):
             if camera and camera.data.background_images:
                 for bg_image in camera.data.background_images:
                     bg_image.show_background_image = False
+                                      
+                    
+
             # Nonaktifkan stamp
             scene.render.use_stamp = False
             self.report({'INFO'}, "HUD is disabled. Background image hidden and stamps turned off.")
@@ -94,6 +97,7 @@ class RAHA_OT_ActivateHUD(bpy.types.Operator):
         self.report({'INFO'}, "HUD activated with specified settings and overlays hidden")
         return {'FINISHED'}
 
+
 class VIEW3D_OT_ToggleSafeArea(bpy.types.Operator):
     """Toggle the visibility of the safe area overlay"""
     bl_idname = "view3d.toggle_safe_area"
@@ -120,15 +124,24 @@ class VIEW3D_OT_ToggleSafeArea(bpy.types.Operator):
             # Update icon berdasarkan kondisi
             if bg_image.show_background_image:
                 self.bl_icon = 'HIDE_OFF'  # Mata terbuka
+                # If background image is on, enable render stamp
+                scene.render.use_stamp = True
+                self.report({'INFO'}, "Render stamp enabled.")
             else:
                 self.bl_icon = 'HIDE_ON'  # Mata tertutup
+                # If background image is off, disable render stamp
+                scene.render.use_stamp = False
+                self.report({'INFO'}, "Render stamp disabled.")
 
             status = "on" if bg_image.show_background_image else "off"
             self.report({'INFO'}, f"Safe area background image turned {status}.")
+
         else:
             self.report({'ERROR'}, "No background images found on the active camera.")
 
         return {'FINISHED'}
+
+
 
 class VIEW3D_OT_DeleteSafeAreaImage(bpy.types.Operator):
     """Delete the safe area background image from the camera"""
