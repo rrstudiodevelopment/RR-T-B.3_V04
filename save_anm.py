@@ -334,7 +334,7 @@ def export_bone_keyframe_data(context, filepath):
         bpy.context.scene.render.use_file_extension = False
         bpy.context.scene.render.filepath = playblast_path
         bpy.context.scene.render.image_settings.file_format = 'FFMPEG'
-        bpy.context.scene.render.ffmpeg.format = 'MPEG4'
+        bpy.context.scene.render.ffmpeg.format = 'QUICKTIME'
         bpy.context.scene.render.ffmpeg.codec = 'H264'
         bpy.context.scene.render.ffmpeg.audio_codec = 'AAC'
         
