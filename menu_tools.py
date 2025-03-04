@@ -121,11 +121,11 @@ class RAHA_OT_InfoPopup(bpy.types.Operator):
             layout = self.layout
             
             col = layout.column()
-            col.label(text="update 03/03/2025 - 20:23")
+            col.label(text="update 04/03/2025 - 15:00")
             col.label(text="Raha Tools v.04")            
             col.separator()            
- #           col.label(text="- update Bake animation ")
-            col.label(text="- update anim lib")
+            col.label(text="- update anim lib ")
+#            col.label(text="- update anim lib")
 #            col.label(text="- update save animation")
 #           col.label(text="- Playblast + HUD")
 #            col.separator()
@@ -195,8 +195,8 @@ class RAHA_PT_Tools_For_Animation(bpy.types.Panel):
         layout = self.layout 
         layout.label(text="Animation Library")                
         row = layout.row()          
-        row.operator("floating.open_save_animation", text="Save Animation")
-        row.operator("floating.open_import_animation", text="Import Animation")          
+#        row.operator("floating.open_save_animation", text="Save Animation")
+        row.operator("floating.open_import_animation", text="Animation Library")          
         layout = self.layout        
         layout.operator("floating.open_panel_pose_lib", text="Library pose") 
         
