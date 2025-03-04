@@ -229,6 +229,8 @@ class VIDEO_PT_Browser(bpy.types.Panel):
         row = layout.row()             
         row.operator("wm.select_bones_from_script", text="Selected")
         row.operator("wm.delete_video", text="Delete", icon='TRASH')
+        row = layout.row()          
+        row.operator("floating.open_save_animation", text="Save Animation")        
 
 # Register function
 def register():
