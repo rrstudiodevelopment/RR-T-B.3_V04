@@ -1,56 +1,131 @@
-
+import os
+import ast  # Tambahkan ini
+import bpy
+from bpy.types import Operator
 
 import bpy
 import json
 import os
 from bpy_extras.io_utils import ExportHelper, ImportHelper
-from bpy.props import StringProperty, BoolProperty, FloatProperty
+from bpy.props import StringProperty, BoolProperty, FloatProperty, EnumProperty
 from bpy.types import Operator, Panel
+from bpy.utils import previews
+
+# Global variables for image previews
+_icons = None
+_image_paths = []
+
+# Function to load images from a custom path
+def load_images_from_path(path):
+    global _image_paths
+    _image_paths.clear()
+    
+    if os.path.exists(path) and os.path.isdir(path):
+        for file in os.listdir(path):
+            if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+                _image_paths.append((file, file, "", load_preview_icon(os.path.join(path, file))))
 
 
-class DeleteBonePose(Operator, ImportHelper):
+# Function to load a preview icon
+def load_preview_icon(path):
+    global _icons
+    if path not in _icons:
+        if os.path.exists(path):
+            _icons.load(path, path, "IMAGE")
+        else:
+            return 0
+    return _icons[path].icon_id
+
+#====================================================================================================
+# Enum property for the images
+def sna_images_enum_items(self, context):
+    return [(item[0], item[1], item[2], item[3], i) for i, item in enumerate(_image_paths)]
+
+# Update function for the custom path property
+def sna_update_custom_path(self, context):
+    custom_path = bpy.context.scene.sna_custom_path
+    load_images_from_path(custom_path)
+    
+#===================================================================================================
+# Operator to refresh the image list
+class WM_OT_RefreshImageList(bpy.types.Operator):
+    bl_idname = "wm.refresh_image_list"
+    bl_label = "Refresh Image List"
+    bl_description = "Refresh the list of images in the selected folder"
+    
+    def execute(self, context):
+        custom_path = context.scene.sna_custom_path
+        
+        if custom_path and os.path.isdir(custom_path):
+            load_images_from_path(custom_path)  # Reload images from the custom path
+            self.report({'INFO'}, "Image list refreshed.")
+        else:
+            self.report({'ERROR'}, "Invalid or no folder selected.")
+        
+        return {'FINISHED'}
+#===============================================================================================    
+
+
+#===================================================================================================
+
+class DeleteBonePose(Operator):
     bl_idname = "delete.bone_pose"
     bl_label = "Delete Bone Pose"
     filename_ext = ".png"  # Menerima file PNG untuk dipilih
+    
+    def execute(self, context):        
+        selected_image = context.scene.sna_images
+        if not selected_image:
+            self.report({'WARNING'}, "No image selected.")
+            return {'CANCELLED'}
 
-    def execute(self, context):
-        # Path gambar yang dipilih
-        image_path = self.filepath
-        image_name = os.path.splitext(os.path.basename(image_path))[0]  # Nama file tanpa ekstensi
+        custom_path = context.scene.sna_custom_path
+        if not custom_path:
+            self.report({'ERROR'}, "No folder selected.")
+            return {'CANCELLED'}
 
-        # Mengambil folder dari path gambar
-        selected_folder = os.path.dirname(image_path)
-        data_pose_folder = os.path.join(selected_folder, "data_pose")  # Menentukan folder data_pose
-        script_path = os.path.join(data_pose_folder, f"{image_name}.py")  # Menentukan path skrip yang sesuai
+        image_name = os.path.splitext(selected_image)[0]
+        data_pose_folder = os.path.join(custom_path, "data_pose")  # Menentukan folder data_pose
+        script_path = os.path.join(data_pose_folder, f"{image_name}.py")  # Path skrip
+        image_path = os.path.join(custom_path, selected_image)  # Path gambar
 
-        # Cek apakah folder data_pose ada
-        if os.path.exists(data_pose_folder):
-            # Hapus file skrip jika ada
-            if os.path.exists(script_path):
-                try:
-                    os.remove(script_path)
-                    self.report({'INFO'}, f"Deleted script: {script_path}")
-                except Exception as e:
-                    self.report({'ERROR'}, f"Failed to delete script: {str(e)}")
-            else:
-                self.report({'WARNING'}, f"No matching script found for image: {image_name}")
-
-            # Hapus file gambar jika ada
-            if os.path.exists(image_path):
-                try:
-                    os.remove(image_path)
-                    self.report({'INFO'}, f"Deleted image: {image_path}")
-                except Exception as e:
-                    self.report({'ERROR'}, f"Failed to delete image: {str(e)}")
-            else:
-                self.report({'WARNING'}, f"No matching image found: {image_path}")
+        # Hapus file skrip jika ada
+        if os.path.exists(script_path):
+            try:
+                os.remove(script_path)
+                self.report({'INFO'}, f"Deleted script: {script_path}")
+            except Exception as e:
+                self.report({'ERROR'}, f"Failed to delete script: {str(e)}")
         else:
-            self.report({'WARNING'}, f"No 'data_pose' folder found in: {selected_folder}")
+            self.report({'WARNING'}, f"No matching script found for image: {image_name}")
+
+        # Hapus file gambar jika ada
+        if os.path.exists(image_path):
+            try:
+                os.remove(image_path)
+                self.report({'INFO'}, f"Deleted image: {image_path}")
+            except Exception as e:
+                self.report({'ERROR'}, f"Failed to delete image: {str(e)}")
+        else:
+            self.report({'WARNING'}, f"No matching image found: {image_path}")
+
+        # Refresh daftar gambar
+        self.refresh_images(context)  # Panggil metode refresh setelah delete
 
         return {'FINISHED'}
+    
+    def refresh_images(self, context):
+        """Memuat ulang daftar gambar setelah penghapusan."""
+        custom_path = context.scene.sna_custom_path
+        
+        if custom_path and os.path.isdir(custom_path):
+            load_images_from_path(custom_path)  # Reload daftar gambar
+            self.report({'INFO'}, "Image list refreshed.")
+        else:
+            self.report({'ERROR'}, "Invalid or no folder selected.")
 
 
-#===================================================================================================    
+#===================================================================================================
 
 def flip_selected_pose(context):
     """Flip the pose for selected bones"""
@@ -59,7 +134,6 @@ def flip_selected_pose(context):
         bpy.ops.pose.paste(flipped=True)  # Paste flipped pose
     except RuntimeError:
         context.report({'WARNING'}, "Flip Pose failed. Ensure you're in Pose Mode and bones are selected.")
-
 
 def serialize_custom_properties(bone):
     custom_props = {}
@@ -78,11 +152,21 @@ def serialize_custom_properties(bone):
 
     return custom_props if custom_props else None  # Return None if empty
 
-
-class ExportBonePose(Operator, ExportHelper):
+class ExportBonePose(Operator):
     bl_idname = "export.bone_pose"
     bl_label = "Export Bone Pose"
-    filename_ext = ".py"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # Add a StringProperty for the file name
+    file_name: StringProperty(
+        name="File Name",
+        description="Name of the exported pose file",
+        default="NewPose"
+    )
+
+    def invoke(self, context, event):
+        # Open a pop-up to ask for the file name
+        return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
         obj = context.object
@@ -94,7 +178,8 @@ class ExportBonePose(Operator, ExportHelper):
         if not bones:
             self.report({'WARNING'}, "No bones selected.")
             return {'CANCELLED'}
-
+        
+        registered_bones = [bone.name for bone in bones]  # Hanya tulang yang terpilih
         bone_data = {}
 
         for bone in bones:
@@ -110,16 +195,19 @@ class ExportBonePose(Operator, ExportHelper):
 
             bone_data[bone.name] = bone_info
 
-        selected_folder = os.path.dirname(self.filepath)
-        script_filename = os.path.basename(self.filepath)
-        script_name = os.path.splitext(script_filename)[0]  # Get file name without extension
-        
-        data_pose_folder = os.path.join(selected_folder, "data_pose")
+        custom_path = context.scene.sna_custom_path
+        if not custom_path:
+            self.report({'ERROR'}, "No folder selected.")
+            return {'CANCELLED'}
+
+        # Use the file name provided by the user
+        pose_name = self.file_name
+        data_pose_folder = os.path.join(custom_path, "data_pose")
         if not os.path.exists(data_pose_folder):
             os.makedirs(data_pose_folder)
         
-        script_path = os.path.join(data_pose_folder, script_filename)
-        image_path = os.path.join(selected_folder, f"{script_name}.png")
+        script_path = os.path.join(data_pose_folder, f"{pose_name}.py")
+        image_path = os.path.join(custom_path, f"{pose_name}.png")
 
         script_content = f"""
 import bpy
@@ -130,8 +218,10 @@ def apply_bone_pose():
     if obj is None or obj.type != 'ARMATURE':
         print("No armature selected.")
         return
-
+    
+    registered_bones = {json.dumps(registered_bones, indent=4)}
     bone_data = {json.dumps(bone_data, indent=4)}
+
     selected_bones = [bone.name for bone in bpy.context.selected_pose_bones]
     matched_bones = {{}}
 
@@ -153,6 +243,7 @@ def apply_bone_pose():
             if "custom_properties" in data:
                 for prop, value in data["custom_properties"].items():
                     bone[prop] = value
+                                     
 
 apply_bone_pose()
 """
@@ -170,19 +261,24 @@ apply_bone_pose()
 
         return {'FINISHED'}
 
-
-
-
-
-class ImportBonePose(Operator, ImportHelper):
+# Operator to import bone pose
+class ImportBonePose(Operator):
     bl_idname = "import.bone_pose"
     bl_label = "Import Bone Pose"
-    filename_ext = "*.png"
 
     def execute(self, context):
-        selected_image_path = self.filepath
-        script_name = os.path.splitext(os.path.basename(selected_image_path))[0] + ".py"
-        script_path = os.path.join(os.path.dirname(selected_image_path), "data_pose", script_name)
+        selected_image = context.scene.sna_images
+        if not selected_image:
+            self.report({'WARNING'}, "No image selected.")
+            return {'CANCELLED'}
+
+        custom_path = context.scene.sna_custom_path
+        if not custom_path:
+            self.report({'ERROR'}, "No folder selected.")
+            return {'CANCELLED'}
+
+        image_name = os.path.splitext(selected_image)[0]
+        script_path = os.path.join(custom_path, "data_pose", f"{image_name}.py")
 
         if os.path.exists(script_path):
             with open(script_path, "r") as file:
@@ -191,22 +287,19 @@ class ImportBonePose(Operator, ImportHelper):
         else:
             self.report({'WARNING'}, f"No matching script found: {script_path}")
             return {'CANCELLED'}
-        # **Tambahkan keyframe jika opsi set_keyframes dicentang**
+        
         if context.scene.set_keyframes:
             self.insert_keyframes(context)
             self.report({'INFO'}, "Keyframes inserted after importing pose.")
             
         return {'FINISHED'}
     
-    
-
     def insert_keyframes(self, context):
         obj = context.object
         if obj and obj.type == 'ARMATURE':
             current_frame = context.scene.frame_current
             for bone in context.selected_pose_bones:
-                # Insert keyframes for the selected bones
-                bpy.context.view_layer.objects.active = obj  # Set active object
+                bpy.context.view_layer.objects.active = obj
                 bpy.ops.anim.keyframe_insert_by_name(type="LocRotScaleCProp")
 
     def apply_bone_pose(self):
@@ -242,35 +335,76 @@ class ImportBonePose(Operator, ImportHelper):
                 else:
                     print(f"Skipping 'rigify_parameters' for bone: {bone_name}")
 
-
         return {'FINISHED'}
 
-    def insert_keyframes(self, context):
-        obj = context.object
-        if obj and obj.type == 'ARMATURE':
-                # Tentukan frame yang akan diberi keyframe
-                current_frame = context.scene.frame_current
-                
-                # Simpan referensi ke objek aktif untuk menghindari memanggilnya berulang kali
-                bpy.context.view_layer.objects.active = obj
+#=============================================================================================
 
-                # Menggunakan batching untuk menambahkan keyframe secara kolektif
-                selected_bones = context.selected_pose_bones
-                
-                if selected_bones:
-                        # Aktifkan animasi hanya sekali
-                        bpy.ops.anim.keyframe_insert(type="LocRotScaleCProp")
-                        
-                        # Setelah itu, set keyframe untuk setiap bone
-                        for bone in selected_bones:
-                                # Bisa ditambahkan properti tertentu jika diperlukan, misalnya:
-                                # bone.keyframe_insert(data_path="location")
-                                # bone.keyframe_insert(data_path="rotation_euler")
-                                # bone.keyframe_insert(data_path="scale")
-                                pass  # Proses insert keyframe sudah terhandle oleh keyframe_insert sebelumnya
-                else:
-                        self.report({'WARNING'}, "No bones selected.")
-                        
+class SelectBonesFromScript(Operator):
+    bl_idname = "pose.select_bones_from_script"
+    bl_label = "Select Bones from Script"
+
+    def execute(self, context):
+        selected_image = context.scene.sna_images
+        if not selected_image:
+            self.report({'WARNING'}, "No image selected.")
+            return {'CANCELLED'}
+
+        custom_path = context.scene.sna_custom_path
+        if not custom_path:
+            self.report({'ERROR'}, "No folder selected.")
+            return {'CANCELLED'}
+
+        image_name = os.path.splitext(selected_image)[0]
+        script_path = os.path.join(custom_path, "data_pose", f"{image_name}.py")
+
+        if not os.path.exists(script_path):
+            self.report({'WARNING'}, f"No matching script found: {script_path}")
+            return {'CANCELLED'}
+
+        with open(script_path, "r") as file:
+            script_content = file.read()
+
+        # Parse script to extract registered_bones
+        registered_bones = []
+        try:
+            tree = ast.parse(script_content)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name) and target.id == "registered_bones":
+                            if isinstance(node.value, ast.List):
+                                registered_bones = [elt.s for elt in node.value.elts if isinstance(elt, ast.Str)]
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to parse script: {str(e)}")
+            return {'CANCELLED'}
+
+        if not registered_bones:
+            self.report({'WARNING'}, "No registered bones found in the script.")
+            return {'CANCELLED'}
+
+        obj = context.object
+        if obj is None or obj.type != 'ARMATURE':
+            self.report({'WARNING'}, "No armature selected.")
+            return {'CANCELLED'}
+
+        bpy.ops.object.mode_set(mode='POSE')
+        bpy.ops.pose.select_all(action='DESELECT')
+
+        selected_count = 0
+        for bone_name in registered_bones:
+            bone = obj.pose.bones.get(bone_name)
+            if bone:
+                bone.bone.select = True
+                self.report({'INFO'}, f"Selected bone: {bone_name}")
+                selected_count += 1
+            else:
+                self.report({'WARNING'}, f"Bone not found: {bone_name}")
+
+        if selected_count == 0:
+            self.report({'WARNING'}, "No registered bones found in the armature.")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
 
 
 #======== Value slider ===================================================================
@@ -333,6 +467,7 @@ class ApplyPercentageOperator(bpy.types.Operator):
         bpy.ops.anim.keyframe_insert_by_name(type="LocRotScaleCProp")
         
         return {'FINISHED'}
+
 #========================================================================================    
 class OBJECT_OT_FlipPoseOperator(bpy.types.Operator):
     """Flip the current pose"""
@@ -348,9 +483,9 @@ class OBJECT_OT_FlipPoseOperator(bpy.types.Operator):
         
         flip_selected_pose(context)
         return {'FINISHED'}
-#    ==========================================================
 
-    
+#=====================================================================================================
+
 class Raha_tombol_panel_POSE_LIB(bpy.types.Panel):
     bl_label = "Bone Pose Export/Import"
     bl_idname = "PT_BonePose"
@@ -360,20 +495,30 @@ class Raha_tombol_panel_POSE_LIB(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.label(text="Export & Import Bone Pose")
+        layout.label(text="POSE LIBRARY")
 
-
+        # Image Browser
+        layout.prop(context.scene, 'sna_custom_path', text="Folder")
+        layout.template_icon_view(context.scene, 'sna_images', show_labels=True, scale=5.0, scale_popup=5.0)
         row = layout.row()
-        row.operator("export.bone_pose", text="Export Pose")
+        row.operator("wm.refresh_image_list", text="", icon='FILE_REFRESH')
+                    
+        row.operator("pose.select_bones_from_script", text="Select Bones") 
+        row.operator("delete.bone_pose", text="", icon="TRASH")                
+
+
+        row = layout.row()              
+        row.operator("export.bone_pose", text="Export Pose")      
         row.operator("import.bone_pose", text="Import Pose")
-        layout.operator("delete.bone_pose", text="Delete Pose")
-        layout.prop(context.scene, "set_keyframes", text="Set Keyframes")
-       
         
-        # Menambahkan panel Percentage
+        layout.prop(context.scene, "set_keyframes", text="Auto Set Keyframes")      
+
 
         row = layout.row()        
+        # Menambahkan panel Percentage
+        row = layout.row()        
         row.prop(context.scene, "percentage_value", text="Percentage (%)")
+        row = layout.row()          
         row.operator("pose.apply_percentage", text="Apply Percentage")         
         
         row = layout.row()
@@ -384,18 +529,27 @@ class Raha_tombol_panel_POSE_LIB(bpy.types.Panel):
         row.prop(context.scene, "calc_custom_property", text="Custom Properties")
         # Tombol Apply
         layout.operator("object.flip_pose", text="Flip Pose")              
-#=====================================================================================================        
 
+#=====================================================================================================
 
 def register():
+    global _icons
+    _icons = previews.new()
+
     bpy.utils.register_class(ExportBonePose)
     bpy.utils.register_class(ImportBonePose)
+    bpy.utils.register_class(SelectBonesFromScript)
+    bpy.utils.register_class(WM_OT_RefreshImageList)
+#    bpy.utils.register_class(POSE_LIB_PT_Panel)
+        
+#    bpy.utils.register_class(ExportBonePose)
+#    bpy.utils.register_class(ImportBonePose)
     bpy.utils.register_class(OBJECT_OT_FlipPoseOperator)    
     bpy.utils.register_class(Raha_tombol_panel_POSE_LIB)
     bpy.utils.register_class(DeleteBonePose)
-
-    
     bpy.utils.register_class(ApplyPercentageOperator)
+#    bpy.utils.register_class(WM_OT_RefreshImageList)
+#    bpy.utils.register_class(IMAGE_PT_Browser)
     
     # Menambahkan properti untuk persen
     bpy.types.Scene.percentage_value = bpy.props.FloatProperty(name="Percentage", default=50)
@@ -405,31 +559,51 @@ def register():
     bpy.types.Scene.calc_rotation = bpy.props.BoolProperty(name="Rotation", default=True)
     bpy.types.Scene.calc_scale = bpy.props.BoolProperty(name="Scale", default=True)
     bpy.types.Scene.calc_custom_property = bpy.props.BoolProperty(name="Custom Properties", default=True)    
-
-
     bpy.types.Scene.set_keyframes = BoolProperty(name="Set Keyframes")
-
+    
+    # Properties
+    bpy.types.Scene.sna_custom_path = StringProperty(
+        name="Custom Path",
+        description="Path to the folder containing images",
+        default="",
+        subtype='DIR_PATH',
+        update=sna_update_custom_path
+    )
+    
+    bpy.types.Scene.sna_images = EnumProperty(
+        name="Images",
+        description="List of images in the selected folder",
+        items=sna_images_enum_items
+    )
 
 def unregister():
+    global _icons
+    previews.remove(_icons)
+    
+    bpy.utils.unregister_class(ExportBonePose)
+    bpy.utils.unregister_class(ImportBonePose)
+    bpy.utils.unregister_class(SelectBonesFromScript)
+    bpy.utils.unregister_class(WM_OT_RefreshImageList)
+    bpy.utils.unregister_class(POSE_LIB_PT_Panel)    
+    
     bpy.utils.unregister_class(ExportBonePose)
     bpy.utils.unregister_class(ImportBonePose)
     bpy.utils.unregister_class(OBJECT_OT_FlipPoseOperator)      
     bpy.utils.unregister_class(Raha_tombol_panel_POSE_LIB)
     bpy.utils.unregister_class(DeleteBonePose)
-
-        
+    bpy.utils.unregister_class(ApplyPercentageOperator)
+    bpy.utils.unregister_class(WM_OT_RefreshImageList)
+    bpy.utils.unregister_class(IMAGE_PT_Browser)
+    
     del bpy.types.Scene.script_folder_path
     del bpy.types.Scene.set_keyframes
-    bpy.utils.unregister_class(ApplyPercentageOperator)
-    
-    # Menghapus properti
     del bpy.types.Scene.percentage_value
     del bpy.types.Scene.calc_location
     del bpy.types.Scene.calc_rotation
     del bpy.types.Scene.calc_scale
     del bpy.types.Scene.calc_custom_property
-    
-
+    del bpy.types.Scene.sna_custom_path
+    del bpy.types.Scene.sna_images
 
 if __name__ == "__main__":
     register()
