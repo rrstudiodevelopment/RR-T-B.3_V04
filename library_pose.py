@@ -36,8 +36,8 @@ def load_preview_icon(path):
             return 0
     return _icons[path].icon_id
 
-#====================================================================================================
-# Enum property for the images
+#=================================== rename ================================================
+# Enum property for the images 
 def sna_images_enum_items(self, context):
     return [(item[0], item[1], item[2], item[3], i) for i, item in enumerate(_image_paths)]
 
@@ -45,7 +45,84 @@ def sna_images_enum_items(self, context):
 def sna_update_custom_path(self, context):
     custom_path = bpy.context.scene.sna_custom_path
     load_images_from_path(custom_path)
+
+class RenameImageAndScript(Operator):
+    bl_idname = "wm.rename_image_and_script"
+    bl_label = "Rename Image and Script"
     
+    new_name: StringProperty(
+        name="New Name",
+        description="New name for the image and script",
+        default=""
+    )
+
+    def invoke(self, context, event):
+        selected_image = context.scene.sna_images
+        if not selected_image:
+            self.report({'WARNING'}, "No image selected.")
+            return {'CANCELLED'}
+
+        self.new_name = os.path.splitext(selected_image)[0]
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        selected_image = context.scene.sna_images
+        if not selected_image:
+            self.report({'WARNING'}, "No image selected.")
+            return {'CANCELLED'}
+
+        custom_path = context.scene.sna_custom_path
+        if not custom_path:
+            self.report({'ERROR'}, "No folder selected.")
+            return {'CANCELLED'}
+
+        old_name = os.path.splitext(selected_image)[0]
+        new_name = self.new_name
+
+        # Path untuk gambar lama dan baru
+        old_image_path = os.path.join(custom_path, selected_image)
+        new_image_path = os.path.join(custom_path, f"{new_name}.png")
+
+        # Path untuk script lama dan baru
+        data_pose_folder = os.path.join(custom_path, "data_pose")
+        old_script_path = os.path.join(data_pose_folder, f"{old_name}.py")
+        new_script_path = os.path.join(data_pose_folder, f"{new_name}.py")
+
+        # Rename gambar
+        if os.path.exists(old_image_path):
+            try:
+                os.rename(old_image_path, new_image_path)
+                self.report({'INFO'}, f"Renamed image: {old_image_path} to {new_image_path}")
+            except Exception as e:
+                self.report({'ERROR'}, f"Failed to rename image: {str(e)}")
+        else:
+            self.report({'WARNING'}, f"No matching image found: {old_image_path}")
+
+        # Rename script
+        if os.path.exists(old_script_path):
+            try:
+                os.rename(old_script_path, new_script_path)
+                self.report({'INFO'}, f"Renamed script: {old_script_path} to {new_script_path}")
+            except Exception as e:
+                self.report({'ERROR'}, f"Failed to rename script: {str(e)}")
+        else:
+            self.report({'WARNING'}, f"No matching script found: {old_script_path}")
+
+        # Refresh daftar gambar
+        self.refresh_images(context)
+
+        return {'FINISHED'}
+
+    def refresh_images(self, context):
+        """Memuat ulang daftar gambar setelah rename."""
+        custom_path = context.scene.sna_custom_path
+        
+        if custom_path and os.path.isdir(custom_path):
+            load_images_from_path(custom_path)  # Reload daftar gambar
+            self.report({'INFO'}, "Image list refreshed.")
+        else:
+            self.report({'ERROR'}, "Invalid or no folder selected.")
+                
 #===================================================================================================
 # Operator to refresh the image list
 class WM_OT_RefreshImageList(bpy.types.Operator):
@@ -510,6 +587,8 @@ class Raha_tombol_panel_POSE_LIB(bpy.types.Panel):
         row = layout.row()              
         row.operator("export.bone_pose", text="Export Pose")      
         row.operator("import.bone_pose", text="Import Pose")
+        row = layout.row()         
+        row.operator("wm.rename_image_and_script", text="Rename")        
         
         layout.prop(context.scene, "set_keyframes", text="Auto Set Keyframes")      
 
@@ -540,7 +619,7 @@ def register():
     bpy.utils.register_class(ImportBonePose)
     bpy.utils.register_class(SelectBonesFromScript)
     bpy.utils.register_class(WM_OT_RefreshImageList)
-#    bpy.utils.register_class(POSE_LIB_PT_Panel)
+    bpy.utils.register_class(RenameImageAndScript)
         
 #    bpy.utils.register_class(ExportBonePose)
 #    bpy.utils.register_class(ImportBonePose)
@@ -584,6 +663,7 @@ def unregister():
     bpy.utils.unregister_class(ImportBonePose)
     bpy.utils.unregister_class(SelectBonesFromScript)
     bpy.utils.unregister_class(WM_OT_RefreshImageList)
+    bpy.utils.unregister_class(RenameImageAndScript)    
     bpy.utils.unregister_class(POSE_LIB_PT_Panel)    
     
     bpy.utils.unregister_class(ExportBonePose)
